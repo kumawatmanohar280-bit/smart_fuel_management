@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Smart Fuel & Route Planner</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
+<link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine/dist/leaflet-routing-machine.css"/>
+<style>
+body {
+    font-family: Arial;
+    margin:0; padding:20px;
+    background: linear-gradient(rgba(0,0,0,0.3), rgba(0,0,0,0.3)),
+                url('https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=1400&q=80');
+    background-size: cover;
+    background-position: center;
+    color: white;
+    min-height: 100vh;
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+    flex-direction: column;
+}
+
+/* Welcome Screen */
+#welcomeScreen {
+    width:100%; height:100vh; position:fixed; top:0; left:0; background:rgba(0,0,0,0.85);
+    display:flex; justify-content:center; align-items:center; flex-direction:column; color:white; z-index:1000;
+}
+
+#welcomeScreen button {
+    padding:10px 20px; font-size:18px; border-radius:5px; cursor:pointer; margin-top:10px;
+}
+
+/* Login Form in corner */
+#loginForm {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    width: 250px;
+    background: rgba(255,255,255,0.85);
+    color: black;
+    padding: 15px;
+    border-radius: 10px;
+    box-shadow: 0 0 10px rgba(0,0,0,0.3);
+    display:none;
+}
+
+#planner, #logoutBtn, #thankMsg {
+    background: rgba(255,255,255,0.85);
+    color: black;
+    padding: 15px;
+    border-radius: 10px;
+    box-shadow: 0 0 10px rgba(0,0,0,0.3);
+    margin-bottom:10px;
+    width: 300px;
+}
+
+input, select, button {
+    margin:5px 0; padding:8px; width:100%;
+    border-radius:5px;
+    border:1px solid #888;
+}
+#map {
+    height: 400px; 
+    width: 100%; 
+    margin-top: 10px; 
+    border-radius:10px;
+    border:1px solid #888;
+}
+.route {
+    margin:10px 0; padding:8px; background:#e6f7ff; border:1px solid #a0c4ff; border-radius:5px; color:black;
+}
+#loginMsg { color:red; }
+#thankMsg { display:none; text-align:center; font-size:24px; }
+
+@media only screen and (max-width: 600px) {
+  #loginForm, #planner, #logoutBtn {
+    width: 95%;
+    padding: 10px;
+  }
+  #map {
+    height: 300px;
+  }
+  input, select, button {
+    width: 100%;
+  }
+}
+</style>
+</head>
+<body>
+
+<h2 style="text-align:center; width:100%;">Smart Fuel Management & Route Planner</h2>
+
+<!-- WELCOME SCREEN -->
+<div id="welcomeScreen">
+  <h1>Welcome to Smart Fuel & Route Planner</h1>
+  <p>Plan your trips, save fuel, and see routes!</p>
+  <button onclick="enterApp()">Continue</button>
+</div>
+
+<!-- LOGIN -->
+<div id="loginForm">
+  <input type="text" id="username" placeholder="Username"><br>
+  <input type="password" id="password" placeholder="Password"><br>
+  <button onclick="registerUser()">Register</button>
+  <button onclick="loginUser()">Login</button>
+  <p id="loginMsg"></p>
+</div>
+
+<!-- THANK YOU MESSAGE -->
+<div id="thankMsg">Thank you!</div>
+
+<!-- LOGOUT -->
+<div id="logoutBtn" style="display:none;">
+  Logged in as <span id="currentUser"></span>
+  <button onclick="logoutUser()">Logout</button>
+</div>
+
+<!-- PLANNER -->
+<div id="planner" style="display:none;">
+  <h3>Vehicle & Trip Info</h3>
+  <label>Vehicle Type:</label><br>
+  <select id="vehicle">
+    <option value="">--Select--</option>
+    <option value="bike">Bike</option>
+    <option value="car">Car</option>
+  </select><br>
+  <label>Trip Distance (km):</label><br>
+  <input type="number" id="distance" placeholder="Enter distance"><br>
+  <button onclick="planTrip()">Plan Best Route</button>
+
+  <h3>Routes Info:</h3>
+  <div id="routes"></div>
+
+  <div id="map"></div>
+</div>
+
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet-routing-machine/dist/leaflet-routing-machine.min.js"></script>
+<script>
+/* ---------------- WELCOME ---------------- */
+function enterApp(){
+  localStorage.setItem("visited","true");
+  document.getElementById("welcomeScreen").style.display="none";
+  document.getElementById("loginForm").style.display="block";
+}
+
+/* ---------------- LOGIN / LOGOUT ---------------- */
+function registerUser(){
+  const u=document.getElementById("username").value.trim();
+  const p=document.getElementById("password").value.trim();
+  if(!u || !p){ showMsg("Fill all fields!", "red"); return; }
+  if(u==="admin"){ showMsg("Cannot register as admin!", "red"); return; }
+
+  let users = JSON.parse(localStorage.getItem("users")||"{}");
+  if(users[u]){
+    showMsg("User already exists! Cannot change password.", "red");
+    return;
+  }
+
+  users[u] = { password:p, trips:[] };
+  localStorage.setItem("users", JSON.stringify(users));
+  showMsg("Registered successfully! Now login.", "green");
+}
+
+function loginUser(){
+  const u=document.getElementById("username").value.trim();
+  const p=document.getElementById("password").value.trim();
+  let users = JSON.parse(localStorage.getItem("users")||"{}");
+
+  if(users[u] && users[u].password===p){
+    sessionStorage.setItem("currentUser", u);
+    document.getElementById("loginForm").style.display="none";
+    document.getElementById("planner").style.display="block";
+    document.getElementById("currentUser").innerText=u;
+    document.getElementById("thankMsg").style.display="none";
+    initMap();
+    loadPreviousTrips();
+  } else showMsg("Invalid username or password!", "red");
+}
+
+function logoutUser(){
+  sessionStorage.removeItem("currentUser");
+  document.getElementById("planner").style.display="none";
+  document.getElementById("logoutBtn").style.display="none";
+  document.getElementById("routes").innerHTML="";
+  if(map) map.remove();
+  document.getElementById("thankMsg").style.display="block";
+  document.getElementById("thankMsg").innerText="Thank you!";
+}
+
+function showMsg(msg,color){ 
+  const el=document.getElementById("loginMsg"); 
+  el.innerText=msg; el.style.color=color; 
+}
+
+window.onload = ()=>{
+  if(!localStorage.getItem("visited")){
+    document.getElementById("welcomeScreen").style.display="flex";
+    document.getElementById("loginForm").style.display="none";
+  } else {
+    document.getElementById("welcomeScreen").style.display="none";
+    document.getElementById("loginForm").style.display="block";
+  }
+
+  const u=sessionStorage.getItem("currentUser");
+  if(u){
+    document.getElementById("loginForm").style.display="none";
+    document.getElementById("planner").style.display="block";
+    document.getElementById("currentUser").innerText=u;
+    initMap();
+    loadPreviousTrips();
+  }
+}
+
+/* ------------------- MAP ------------------- */
+let map, routingControl;
+
+function initMap(){
+  map = L.map('map').setView([20,77],5); 
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
+    maxZoom: 19
+  }).addTo(map);
+
+  if(navigator.geolocation){
+    navigator.geolocation.getCurrentPosition(pos=>{
+      const lat=pos.coords.latitude;
+      const lon=pos.coords.longitude;
+      L.marker([lat,lon]).addTo(map).bindPopup("Your Location").openPopup();
+      map.setView([lat,lon],10);
+    });
+  }
+}
+
+/* ------------------- PLAN TRIP ------------------- */
+const baseFuel = {bike:50, car:15};
+const fuelPrice = {bike:120, car:100};
+
+function planTrip(){
+  const vehicle=document.getElementById("vehicle").value;
+  const distance=parseFloat(document.getElementById("distance").value);
+  const routesDiv=document.getElementById("routes");
+  routesDiv.innerHTML="";
+  if(!vehicle || isNaN(distance)){routesDiv.innerText="Fill all fields!"; return;}
+
+  if(routingControl){ map.removeControl(routingControl); }
+
+  let start = map.getCenter();
+  let end = [start.lat + distance/1000, start.lng + distance/1000];
+
+  routingControl = L.Routing.control({
+    waypoints: [start, end],
+    routeWhileDragging:false,
+    draggableWaypoints:false,
+    addWaypoints:false
+  }).addTo(map);
+
+  let routes=[], bestRoute=null;
+  for(let i=1;i<=3;i++){
+    const trafficFactor=0.8+Math.random()*0.4;
+    const stops=Math.floor(Math.random()*5);
+    const fuelUsed = distance/baseFuel[vehicle]*trafficFactor + stops*0.2;
+    const cost = (fuelUsed*fuelPrice[vehicle]).toFixed(2);
+    routes.push({route:i, fuel:fuelUsed.toFixed(2), stops, cost});
+  }
+  bestRoute = routes.reduce((prev,curr)=>prev.fuel<curr.fuel?prev:curr);
+
+  routes.forEach(r=>{
+    const div=document.createElement("div");
+    div.className="route";
+    div.innerHTML=`Route ${r.route}: Fuel = ${r.fuel} L, Cost = ₹${r.cost}, Stops = ${r.stops}`+
+                  (r.route===bestRoute.route?"<b> ← Best Route!</b>":"");
+    routesDiv.appendChild(div);
+  });
+
+  let u = sessionStorage.getItem("currentUser");
+  let users = JSON.parse(localStorage.getItem("users")||"{}");
+  users[u].trips.push({vehicle,distance,bestFuel:bestRoute.fuel,bestCost:bestRoute.cost});
+  localStorage.setItem("users",JSON.stringify(users));
+
+  document.getElementById("logoutBtn").style.display="block";
+}
+
+/* ------------------- LOAD PREVIOUS TRIPS ------------------- */
+function loadPreviousTrips(){
+  const u = sessionStorage.getItem("currentUser");
+  const users = JSON.parse(localStorage.getItem("users")||"{}");
+  const routesDiv=document.getElementById("routes");
+  if(users[u] && users[u].trips.length>0){
+    routesDiv.innerHTML="<h4>Previous Trips:</h4>";
+    users[u].trips.forEach((t,i)=>{
+      const div=document.createElement("div");
+      div.className="route";
+      div.innerHTML=`Trip ${i+1}: Vehicle=${t.vehicle}, Distance=${t.distance} km, Fuel=${t.bestFuel} L, Cost=₹${t.bestCost}`;
+      routesDiv.appendChild(div);
+    });
+  }
+}
+</script>
+</body>
+</html>
